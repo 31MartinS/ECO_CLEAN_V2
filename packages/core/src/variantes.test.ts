@@ -8,6 +8,20 @@ const registro = (agua = 10, producto = 100): RegistroComparacion => ({
 const variante = (id: string, registros: RegistroComparacion[]): VarianteComparacion => ({ variante_id: id, nombre: id, registros })
 
 describe('comparación con evidencia y procedencia', () => {
+  it('conserva nombres legibles sin usarlos como identidad de las variantes', () => {
+    const firstId = 'b08f90be-9f09-4e0b-a150-42ae89b3219d'
+    const secondId = '8127b0a5-de14-4baf-b545-11d16e097ad4'
+    const result = compararVariantes([
+      { ...variante(firstId, [registro(5, 10), registro(5, 10)]), nombre: 'Lavado de pisos' },
+      { ...variante(secondId, []), nombre: 'Lavado de pisos' },
+    ])
+
+    expect(result.resumen).toMatchObject([
+      { variante_id: firstId, nombre: 'Lavado de pisos', n_medidos: 2, producto_promedio: 10, elegible: true },
+      { variante_id: secondId, nombre: 'Lavado de pisos', n_medidos: 0, producto_promedio: 0, elegible: false },
+    ])
+    expect(result.recomendada).toBe(firstId)
+  })
   it('compara promedios y observaciones, no totales de muestras distintas', () => {
     const r = compararVariantes([variante('a', [registro(8, 100), registro(12, 200)]), variante('b', [registro(15, 140), registro(15, 140), registro(15, 140)])])
     expect(r.resumen[0]).toMatchObject({ n: 2, n_medidos: 2, agua_promedio: 10, producto_promedio: 150, elegible: true })

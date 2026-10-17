@@ -47,7 +47,7 @@ export function compararVariantes(variantes: VarianteComparacion[], opciones?: {
     const incompletos = registros.some((r) => !esObjeto(r) || typeof r.cumple_criterio !== 'boolean')
     const base = medidos.length ? medidos : validos
     return {
-      variante_id: variante.variante_id, n: validos.length,
+      variante_id: variante.variante_id, nombre: variante.nombre, n: validos.length,
       tasa_cumplimiento: validos.length ? precisar(validos.filter((r) => r.cumple_criterio).length / validos.length) : 0,
       agua_promedio: promedio(base.map((r) => r.litros_agua_reales)),
       producto_promedio: promedio(base.map((r) => r.ml_producto_reales)),
