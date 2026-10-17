@@ -12,6 +12,9 @@ export default defineConfig({
     ...(useHttps ? [basicSsl()] : []),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024
+      },
       manifest: {
         name: 'EcoCleaner Hackathon',
         short_name: 'EcoCleaner',

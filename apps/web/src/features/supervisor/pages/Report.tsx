@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx-js-style';
 import {
     Card,
     IconArrowLeft,
@@ -34,6 +37,240 @@ const formatearHora = (fechaIso?: string | null) => {
     } catch {
         return String(fechaIso);
     }
+};
+
+const estiloHoja = (worksheet: XLSX.WorkSheet, anchos: number[]) => {
+    worksheet['!cols'] = anchos.map((wch) => ({ wch }));
+    worksheet['!rows'] = [{ hpt: 28 }];
+    worksheet['!autofilter'] = { ref: worksheet['!ref'] ?? 'A1:A1' };
+    worksheet['!freeze'] = { xSplit: 0, ySplit: 1 };
+    const rango = XLSX.utils.decode_range(worksheet['!ref'] ?? 'A1:A1');
+    for (let columna = rango.s.c; columna <= rango.e.c; columna += 1) {
+        const encabezado = worksheet[XLSX.utils.encode_cell({ r: 0, c: columna })];
+        if (encabezado) {
+            encabezado.s = {
+                fill: { fgColor: { rgb: '1D4ED8' } },
+                font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
+                alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+                border: { bottom: { style: 'thin', color: { rgb: '163B9A' } } },
+            };
+        }
+    }
+    for (let fila = 1; fila <= rango.e.r; fila += 1) {
+        for (let columna = rango.s.c; columna <= rango.e.c; columna += 1) {
+            const celda = worksheet[XLSX.utils.encode_cell({ r: fila, c: columna })];
+            if (!celda) continue;
+            celda.s = {
+                ...(celda.s ?? {}),
+                alignment: { vertical: 'top', wrapText: true, horizontal: typeof celda.v === 'number' ? 'right' : 'left' },
+                fill: fila % 2 === 0 ? { fgColor: { rgb: 'F8FAFC' } } : { fgColor: { rgb: 'FFFFFF' } },
+                border: { bottom: { style: 'hair', color: { rgb: 'E2E8F0' } } },
+            };
+            if (typeof celda.v === 'number') {
+                celda.z = '#,##0.0';
+            }
+        }
+    }
+};
+
+const construirLibroExcel = ({
+    fecha,
+    consumo,
+    trazabilidad,
+    variantes,
+    decision,
+    totalWater,
+    totalProduct,
+    totalSurface,
+}: {
+    fecha: string;
+    consumo: ConsumptionRow[];
+    trazabilidad: TareaTrazabilidadSupervisor[];
+    variantes: VariantComparison[];
+    decision: EffluentDecision | null;
+    totalWater: number;
+    totalProduct: number;
+    totalSurface: number;
+}) => {
+    const libro = XLSX.utils.book_new();
+    const agregarHoja = (nombre: string, encabezados: string[], filas: (string | number)[][], anchos: number[]) => {
+        const hoja = XLSX.utils.aoa_to_sheet([encabezados, ...filas]);
+        estiloHoja(hoja, anchos);
+        XLSX.utils.book_append_sheet(libro, hoja, nombre);
+    };
+
+    agregarHoja('Resumen ejecutivo', ['Indicador', 'Valor'], [
+            ['Documento', 'Informe técnico de consumos y trazabilidad'],
+            ['Fecha de emisión', fecha],
+            ['Agua total utilizada (L)', totalWater],
+            ['Producto químico total (L)', totalProduct],
+            ['Superficie intervenida (m2)', totalSurface],
+            ['Tareas incluidas', consumo.length],
+        ], [34, 46]);
+    agregarHoja('Consumos', ['Tarea', 'Área', 'Superficie (m2)', 'Nivel de suciedad', 'Hora de inicio', 'Tiempo estimado (min)', 'Agua (L)', 'Producto (L)', 'Resultado', 'Fuente'], consumo.map((row) => [
+            row.task,
+            row.area,
+            row.surface,
+            row.dirtLevel ?? 'Media',
+            formatearHora(row.startTime),
+            row.estimatedTimeMin ?? '',
+            row.water,
+            row.product,
+            row.compliance,
+            row.simulated ? `${row.source} · Simulada` : row.source,
+        ]), [28, 24, 16, 18, 20, 22, 14, 16, 16, 24]);
+    agregarHoja('Trazabilidad', ['Tarea', 'Producto', 'Área', 'Estado', 'Litros previstos', 'Agua declarada (L)', 'Producto declarado (ml)', 'Origen', 'Validaciones'], trazabilidad.map((row) => [
+            row.tarea,
+            row.producto,
+            row.area,
+            row.simulated ? 'Simulada' : row.evaluada ? 'Validada' : row.declarada_agua !== null ? 'Declarada · no evaluada' : 'Prevista · no evaluada',
+            row.prevista_litros,
+            row.declarada_agua ?? '',
+            row.declarada_ml ?? '',
+            row.procedencia?.parametros?.origen ?? 'Procedencia no registrada',
+            row.validaciones.join(', ') || 'Sin alertas registradas',
+        ]), [28, 24, 24, 24, 18, 20, 24, 30, 42]);
+    agregarHoja('Variantes', ['Variante', 'Dilución (ml/L)', 'Muestra', 'Promedio producto (L)', 'Promedio agua (L)', 'Criterio técnico', 'Estado'], variantes.map((variant) => [
+            variant.name,
+            variant.dilution,
+            variant.sampleSize,
+            variant.productAverage,
+            variant.waterAverage,
+            variant.reason,
+            variant.compliance,
+        ]), [24, 18, 16, 24, 20, 48, 18]);
+    agregarHoja('Efluente', ['Sitio', 'Área', 'Tarea', 'Orientación', 'Dictamen', 'pH', 'Origen del pH', 'Fundamento técnico'], decision ? [[
+            decision.site,
+            decision.area,
+            decision.task,
+            decision.orientation,
+            decision.decision,
+            decision.ph ?? 'Sin registro',
+            decision.phOrigin,
+            decision.reason,
+        ]] : [['Sin registro', '', '', '', '', '', '', 'No hay dictamen ambiental registrado.']], [24, 24, 24, 28, 24, 12, 28, 64]);
+    return XLSX.writeFile(libro, `ecocleaner-reporte-supervisor-${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
+
+const generarPdf = ({
+    fecha,
+    consumo,
+    trazabilidad,
+    variantes,
+    decision,
+    totalWater,
+    totalProduct,
+    totalSurface,
+}: {
+    fecha: string;
+    consumo: ConsumptionRow[];
+    trazabilidad: TareaTrazabilidadSupervisor[];
+    variantes: VariantComparison[];
+    decision: EffluentDecision | null;
+    totalWater: number;
+    totalProduct: number;
+    totalSurface: number;
+}) => {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const azul = '#1d4ed8';
+    const gris = '#475569';
+    const margen = 12;
+    const pie = () => {
+        const paginas = doc.getNumberOfPages();
+        for (let pagina = 1; pagina <= paginas; pagina += 1) {
+            doc.setPage(pagina);
+            doc.setFontSize(8);
+            doc.setTextColor(gris);
+            doc.text('EcoCleaner · Informe técnico operativo · Documento controlado', margen, 200);
+            doc.text(`Página ${pagina} de ${paginas}`, 285, 200, { align: 'right' });
+        }
+    };
+    const titulo = (texto: string, subtitulo?: string) => {
+        doc.setFontSize(15);
+        doc.setTextColor(azul);
+        doc.setFont('helvetica', 'bold');
+        doc.text(texto, margen, 16);
+        if (subtitulo) {
+            doc.setFontSize(8);
+            doc.setTextColor(gris);
+            doc.setFont('helvetica', 'normal');
+            doc.text(subtitulo, margen, 22);
+        }
+    };
+    const tabla = (head: string[], body: (string | number)[][], widths?: number[]) => {
+        autoTable(doc, {
+            startY: 28,
+            margin: { left: margen, right: margen, bottom: 16 },
+            head: [head],
+            body,
+            theme: 'grid',
+            styles: { fontSize: 7, cellPadding: 2, textColor: '#1e293b', overflow: 'linebreak', valign: 'middle' },
+            headStyles: { fillColor: azul, textColor: '#ffffff', fontStyle: 'bold', fontSize: 7 },
+            alternateRowStyles: { fillColor: '#f8fafc' },
+            columnStyles: widths?.reduce<Record<number, { cellWidth: number }>>((acc, width, index) => {
+                acc[index] = { cellWidth: width };
+                return acc;
+            }, {}),
+            didDrawPage: (data) => {
+                if (data.pageNumber === 1) return;
+                doc.setFontSize(9);
+                doc.setTextColor(gris);
+                doc.text('EcoCleaner · Informe técnico de consumos y trazabilidad', margen, 10);
+            },
+        });
+    };
+
+    doc.setFillColor(29, 78, 216);
+    doc.rect(0, 0, 297, 5, 'F');
+    titulo('Informe técnico de consumos y trazabilidad', `Fecha de emisión: ${fecha} · Supervisor de Planta`);
+    doc.setFontSize(9);
+    doc.setTextColor('#0f172a');
+    doc.text(`Agua utilizada: ${number(totalWater)} L`, margen, 38);
+    doc.text(`Producto químico: ${number(totalProduct)} L`, 80, 38);
+    doc.text(`Superficie intervenida: ${number(totalSurface)} m²`, 140, 38);
+    doc.text(`Tareas incluidas: ${consumo.length}`, 225, 38);
+    doc.setDrawColor('#cbd5e1');
+    doc.line(margen, 42, 285, 42);
+
+    const consumoHead = ['Tarea', 'Área', 'Sup. m²', 'Suciedad', 'Inicio', 'Tiempo', 'Agua L', 'Producto L', 'Resultado', 'Fuente'];
+    tabla(consumoHead, consumo.map((row) => [
+        row.task, row.area, number(row.surface), row.dirtLevel ?? 'Media', formatearHora(row.startTime),
+        row.estimatedTimeMin ? `${row.estimatedTimeMin} min` : '—', number(row.water), number(row.product),
+        row.compliance, row.simulated ? `${row.source} · Simulada` : row.source,
+    ]), [34, 30, 16, 20, 25, 18, 18, 20, 22, 28]);
+
+    doc.addPage();
+    titulo('Trazabilidad y procedencia', 'Captura histórica de datos usados, validaciones y origen de cada tarea');
+    tabla(['Tarea', 'Producto', 'Área', 'Estado', 'Previsto L', 'Declarado L', 'Declarado ml', 'Origen', 'Validaciones'],
+        trazabilidad.map((row) => [
+            row.tarea, row.producto, row.area,
+            row.simulated ? 'Simulada' : row.evaluada ? 'Validada' : row.declarada_agua !== null ? 'Declarada · no evaluada' : 'Prevista · no evaluada',
+            number(row.prevista_litros), row.declarada_agua == null ? '—' : number(row.declarada_agua),
+            row.declarada_ml == null ? '—' : number(row.declarada_ml),
+            row.procedencia?.parametros?.origen ?? 'No registrada',
+            row.validaciones.join(', ') || 'Sin alertas',
+        ]), [30, 27, 27, 27, 18, 20, 20, 35, 45]);
+
+    doc.addPage();
+    titulo('Evaluación técnica y control ambiental');
+    tabla(['Variante', 'Dilución', 'Muestra', 'Producto medio', 'Agua media', 'Criterio técnico', 'Estado'],
+        variantes.map((variant) => [
+            variant.name, `${variant.dilution} ml/L`, `${variant.sampleSize} repeticiones`,
+            `${number(variant.productAverage)} L`, `${number(variant.waterAverage)} L`, variant.reason, variant.compliance,
+        ]), [30, 22, 25, 25, 22, 105, 25]);
+    if (decision) {
+        const y = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 35;
+        doc.setFontSize(11);
+        doc.setTextColor(azul);
+        doc.text('Dictamen de efluente', margen, y + 12);
+        doc.setFontSize(8);
+        doc.setTextColor('#1e293b');
+        doc.text(`Sitio: ${decision.site} · Área: ${decision.area} · Tarea: ${decision.task}`, margen, y + 19);
+        doc.text(`Dictamen: ${decision.decision} · pH: ${decision.ph ?? 'Sin registro'} · ${decision.orientation}`, margen, y + 25);
+        doc.text(`Fundamento: ${decision.reason}`, margen, y + 31, { maxWidth: 270 });
+    }
+    pie();
+    doc.save(`ecocleaner-reporte-supervisor-${new Date().toISOString().slice(0, 10)}.pdf`);
 };
 
 export default function Report() {
@@ -85,6 +322,30 @@ export default function Report() {
         day: 'numeric',
     });
 
+    const imprimirPdf = () => generarPdf({
+        fecha: fechaHoy,
+        consumo: displayedConsumption,
+        trazabilidad,
+        variantes: variants,
+        decision,
+        totalWater,
+        totalProduct,
+        totalSurface,
+    });
+
+    const descargarExcel = () => {
+        construirLibroExcel({
+            fecha: fechaHoy,
+            consumo: displayedConsumption,
+            trazabilidad,
+            variantes: variants,
+            decision,
+            totalWater,
+            totalProduct,
+            totalSurface,
+        });
+    };
+
     return (
         <div className="supervisor-shell report-page">
             {/* Cabecera del Reporte */}
@@ -111,13 +372,21 @@ export default function Report() {
                     <button
                         type="button"
                         className="primary-button"
-                        onClick={() => window.print()}
-                        title="Imprimir o exportar reporte en PDF"
+                        onClick={imprimirPdf}
+                        title="Generar el PDF desde el diálogo de impresión"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', height: '34px', padding: '6px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
                     >
                         <IconDownload size={15} />
-                        <span
-                        >Exportar / Imprimir PDF</span>
+                        <span>Generar PDF</span>
+                    </button>
+                    <button
+                        type="button"
+                        className="supervisor-header-btn report-excel-button"
+                        onClick={descargarExcel}
+                        title="Descargar el reporte completo en Excel"
+                    >
+                        <IconDownload size={15} />
+                        <span>Descargar Excel</span>
                     </button>
                 </div>
             </header>

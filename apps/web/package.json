@@ -14,10 +14,13 @@
     "@ecocleaner/core": "*",
     "@ecocleaner/schemas": "*",
     "@supabase/supabase-js": "^2.117.3",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
