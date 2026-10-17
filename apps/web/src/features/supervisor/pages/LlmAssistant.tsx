@@ -2,7 +2,9 @@ import { Link, Navigate } from 'react-router-dom'
 import { IconArrowLeft } from '../../../components/ui'
 import { obtenerUsuarioActual } from '../../../services/usuarios'
 import { canShowDemo } from '../explainer/config'
-import { DemoErrorBoundary, DemoExplainer } from '../explainer/DemoExplainer'
+import { DemoErrorBoundary } from '../explainer/DemoExplainer'
+import { DemoChatAssistant } from '../explainer/DemoChatAssistant'
+import '../explainer/live-assistant.css'
 
 export default function LlmAssistant() {
   const role = obtenerUsuarioActual()?.rol
@@ -10,18 +12,21 @@ export default function LlmAssistant() {
     return <Navigate to="/supervisor" replace />
 
   return (
-    <div className="supervisor-shell">
+    <div className="supervisor-shell llm-assistant-page">
       <header className="supervisor-header">
         <div>
           <p className="eyebrow">EcoCleaner / Supervisor</p>
-          <h1>Asistente LLM (demo)</h1>
+          <div className="llm-title-row">
+            <h1>Asistente EcoCleaner</h1>
+            <span className="llm-local-badge">Modo demostración</span>
+          </div>
         </div>
         <Link className="supervisor-header-btn" to="/supervisor">
           <IconArrowLeft size={16} /> Volver al panel
         </Link>
       </header>
       <DemoErrorBoundary>
-        <DemoExplainer role={role} initialPanel="explanation" />
+        <DemoChatAssistant />
       </DemoErrorBoundary>
     </div>
   )
