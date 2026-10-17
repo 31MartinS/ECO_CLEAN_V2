@@ -8,11 +8,7 @@ import SupervisorHome from './pages/SupervisorHome'
 import LlmAssistant from './pages/LlmAssistant'
 import { DemoAnswer } from './explainer/DemoExplainer'
 import { buildExplainerInput } from './explainer/buildExplainerInput'
-import {
-  DEMO_NOTICE,
-  DEMO_QUESTIONS,
-  explainDemo,
-} from './explainer/explainDemo'
+import { DEMO_QUESTIONS, explainDemo } from './explainer/explainDemo'
 import { demoSnapshot, demoTask } from './explainer/fixtures'
 
 const { currentUser, loadExplanation } = vi.hoisted(() => ({
@@ -82,11 +78,13 @@ describe('navegación independiente del supervisor', () => {
       /<a[^>]*href="\/supervisor\/asistente"[^>]*>[\s\S]*?<span class="nav-label">LLM demo<\/span>/,
     )
     const page = renderAt(<LlmAssistant />, '/supervisor/asistente')
-    expect(page).toContain('<h1>Asistente LLM (demo)</h1>')
+    expect(page).toContain('<h1>Asistente EcoCleaner</h1>')
     expect(page).toContain('href="/supervisor"')
-    expect(page).toContain(DEMO_NOTICE)
-    expect(page).toContain('aria-expanded="true"')
-    expect(page).toContain('Cargando registros para la explicación')
+    expect(page).toContain('Modo demostración')
+    expect(page).not.toContain('Datos y sesión')
+    expect(page).not.toContain('Demo sin IA')
+    expect(page).toContain('role="log"')
+    expect(page).toContain('Cargando datos')
   })
 
   it.each(['off', 'real', ''])(
